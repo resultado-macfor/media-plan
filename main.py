@@ -588,7 +588,7 @@ def avaliar_segmento(segmento_texto, tipo_segmento, dados_cliente):
     
     prompt_avaliacao = f"""
 Você é um avaliador crítico de planos de mídia. Sua função é identificar pontos fracos em segmentos de planejamento.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **SEGMENTO A AVALIAR:**
 {tipo_segmento.upper()}
 
@@ -717,7 +717,7 @@ def refinar_segmento(segmento_original, avaliacao, tipo_segmento, dados_cliente)
     
     prompt_refinamento = f"""
 Você é um Estrategista de Mídias Pagas Sênior. Sua tarefa é REFINAR um segmento de plano de mídia com base em uma avaliação crítica.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **SEGMENTO ORIGINAL:**
 {tipo_segmento.upper()}
 
@@ -809,7 +809,7 @@ def gerar_analise_inicial(cliente, orcamento, objetivos, contexto, canais_prefer
         prompt = f"""
 Você é um Estrategista de Mídias Pagas Sênior. Abaixo está uma análise inicial para {cliente}.
 O usuário pediu ajustes específicos. MANTENHA a estrutura geral, mas refine APENAS os pontos solicitados.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **VERSÃO ANTERIOR:**
 {versao_anterior}
 
@@ -833,7 +833,7 @@ Retorne a versão COMPLETA da análise, aplicando apenas os refinamentos.
         # Geração inicial normal
         prompt = f"""
 Você é um Estrategista de Mídias Pagas Sênior. Faça uma ANÁLISE INICIAL detalhada.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **DADOS DO CLIENTE:**
 - Cliente: {cliente}
 - Orçamento Total: R$ {orcamento:,.2f}
@@ -883,7 +883,7 @@ def recomendar_arquitetura_canais(analise_inicial, objetivos, orcamento, canais_
         prompt = f"""
 Você é um Estrategista de Mídias Pagas Sênior. Abaixo está uma arquitetura de canais.
 O usuário pediu ajustes específicos. MANTENHA a estrutura geral, mas refine APENAS os pontos solicitados.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **VERSÃO ANTERIOR:**
 {versao_anterior}
 
@@ -903,7 +903,7 @@ Retorne a versão COMPLETA da arquitetura, aplicando apenas os refinamentos.
     else:
         prompt = f"""
 Você é um Estrategista de Mídias Pagas Sênior. Com base na análise inicial, recomende a ARQUITETURA DE CANAIS.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **ANÁLISE INICIAL:**
 {analise_inicial[:500]}...
 
@@ -963,7 +963,7 @@ def definir_estrutura_plano(arquitetura_canais, objetivos, cliente, orcamento, a
         prompt = f"""
 Você é um Estrategista de Mídias Pagas Sênior. Abaixo está uma estrutura de plano.
 O usuário pediu ajustes específicos. MANTENHA a estrutura geral, mas refine APENAS os pontos solicitados.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **VERSÃO ANTERIOR:**
 {versao_anterior}
 
@@ -984,7 +984,7 @@ Retorne a versão COMPLETA da estrutura, aplicando apenas os refinamentos.
         
         prompt = f"""
 Você é um Estrategista de Mídias Pagas Sênior. Defina a ESTRUTURA DO PLANO.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **Arquitetura de Canais:**
 {arquitetura_canais[:400]}...
 
@@ -1046,7 +1046,7 @@ def detalhar_fases(estrutura_plano, arquitetura_canais, orcamento, cliente, obje
         prompt = f"""
 Você é um Estrategista de Mídias Pagas Sênior. Abaixo está o detalhamento das fases.
 O usuário pediu ajustes específicos. MANTENHA a estrutura geral, mas refine APENAS os pontos solicitados.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **VERSÃO ANTERIOR:**
 {versao_anterior}
 
@@ -1063,7 +1063,7 @@ Retorne a versão COMPLETA do detalhamento, aplicando apenas os refinamentos.
     else:
         prompt = f"""
 Você é um Estrategista de Mídias Pagas Sênior. Detalhe CADA FASE do plano.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **Estrutura do Plano:**
 {estrutura_plano[:500]}...
 
@@ -1133,7 +1133,7 @@ def criar_cronograma(fases_detalhadas, cliente, orcamento, area_geografica,
         prompt = f"""
 Você é um Estrategista de Mídias Pagas Sênior. Abaixo está um cronograma.
 O usuário pediu ajustes específicos. MANTENHA a estrutura geral, mas refine APENAS os pontos solicitados.
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **VERSÃO ANTERIOR:**
 {versao_anterior}
 
@@ -1157,7 +1157,7 @@ Você é um Estrategista de Mídias Pagas Sênior. Crie um CRONOGRAMA DE EXECUÇ
 **Orçamento Total:** R$ {orcamento:,.2f}
 
 **ESTRUTURA DO CRONOGRAMA:**
-
+Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 ## 1. VISÃO GERAL DA EXECUÇÃO
 [Parágrafo resumindo a sequência e duração total, considerando particularidades de {area_geografica}]
 
@@ -1203,7 +1203,7 @@ def gerar_recomendacoes_executivas(plano_completo, cliente, objetivos, area_geog
     
     if instrucoes_refinamento and versao_anterior:
         prompt = f"""
-Você é um Estrategista de Mídias Pagas Sênior. Abaixo estão recomendações executivas.
+Você é um Estrategista de Mídias Pagas Sênior. Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade; Abaixo estão recomendações executivas.
 O usuário pediu ajustes específicos. MANTENHA a estrutura geral, mas refine APENAS os pontos solicitados.
 
 **VERSÃO ANTERIOR:**
@@ -1219,7 +1219,7 @@ Retorne a versão COMPLETA das recomendações, aplicando apenas os refinamentos
     
     else:
         prompt = f"""
-Você é um Estrategista de Mídias Pagas Sênior. Gere RECOMENDAÇÕES EXECUTIVAS finais.
+Você é um Estrategista de Mídias Pagas Sênior. Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade; Gere RECOMENDAÇÕES EXECUTIVAS finais.
 
 **Resumo do Plano:**
 {plano_completo[:1000]}...
