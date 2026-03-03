@@ -587,7 +587,7 @@ def avaliar_segmento(segmento_texto, tipo_segmento, dados_cliente):
 """
     
     prompt_avaliacao = f"""
-Você é um avaliador crítico de planos de mídia. Sua função é identificar pontos fracos em segmentos de planejamento.
+Você é um avaliador crítico de planos de mídia. Sua função é identificar pontos fracos em segmentos de planejamento. Entenda que o orçamento todo deve ser alocado em mídias pagas.
 Entenda que o público alvo desse documento a ser gerado é um profissional experiente de marketing. Não faça sugestões óbvias de fluxos de trabalho. Gere insights e traga profundidade;
 **SEGMENTO A AVALIAR:**
 {tipo_segmento.upper()}
