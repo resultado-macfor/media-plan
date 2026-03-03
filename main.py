@@ -20,7 +20,7 @@ st.set_page_config(
 # Inicializar Gemini
 gemini_api_key = os.getenv("GEM_API_KEY")
 genai.configure(api_key=gemini_api_key)
-modelo = genai.GenerativeModel("gemini-2.5-flash")
+modelo = genai.GenerativeModel("gemini-2.5-pro")
 
 # ============================================================================
 # BASE DE CONHECIMENTO DE MÍDIAS (COMPLETA)
