@@ -1,10 +1,14 @@
 import streamlit as st
 import google.generativeai as genai
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import time
 import re
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # Configuração inicial
 st.set_page_config(
@@ -418,10 +422,342 @@ TEMPLATES_ALOCACAO_BUDGET = {
 }
 
 # ============================================================================
-# FUNÇÕES DE GERAÇÃO COM FLUXO LÓGICO DE INFORMAÇÕES
+# FUNÇÕES DE VISUALIZAÇÃO GRÁFICA
 # ============================================================================
 
-def gerar_analise_inicial(cliente, orcamento, objetivos, contexto, canais_preferencia, 
+def criar_grafico_alocacao_budget(arquitetura_texto):
+    """Extrai dados de alocação de budget do texto da arquitetura e cria gráfico"""
+    
+    # Tentar extrair dados de alocação do texto
+    canais = []
+    valores = []
+    cores = px.colors.qualitative.Set3
+    
+    # Padrões comuns no texto
+    linhas = arquitetura_texto.split('\n')
+    for linha in linhas:
+        # Procurar por padrões como "Meta Ads: R$ 15.000 (30%)" ou "Meta Ads: 30%"
+        match = re.search(r'([A-Za-z\s]+):\s*R?\$?\s*([\d,\.]+)?\s*\(?(\d+)%\)?', linha)
+        if match:
+            canal = match.group(1).strip()
+            percentual = int(match.group(3))
+            if canal and percentual:
+                canais.append(canal[:20])  # Limitar tamanho
+                valores.append(percentual)
+    
+    # Se não encontrou nada, usar dados de exemplo baseados em benchmarks
+    if not canais:
+        canais = ["Meta Ads", "Google Ads", "TikTok", "LinkedIn", "YouTube", "Programática"]
+        valores = [35, 25, 15, 10, 10, 5]  # Distribuição exemplo
+    
+    # Criar DataFrame
+    df = pd.DataFrame({
+        'Canal': canais,
+        'Alocação (%)': valores
+    })
+    df = df.sort_values('Alocação (%)', ascending=True)
+    
+    # Criar gráfico de barras horizontais
+    fig = px.bar(
+        df, 
+        x='Alocação (%)', 
+        y='Canal',
+        orientation='h',
+        title='Distribuição de Budget por Canal',
+        text='Alocação (%)',
+        color='Alocação (%)',
+        color_continuous_scale='Blues',
+        labels={'Alocação (%)': 'Percentual do Budget'}
+    )
+    
+    fig.update_traces(
+        textposition='outside',
+        marker=dict(line=dict(color='rgba(0,0,0,0.3)', width=1))
+    )
+    fig.update_layout(
+        height=400,
+        xaxis=dict(range=[0, max(valores) + 10]),
+        showlegend=False,
+        coloraxis_showscale=False
+    )
+    
+    return fig
+
+def criar_grafico_alocacao_funil(arquitetura_texto, estrutura_texto):
+    """Cria gráfico de alocação por etapa do funil"""
+    
+    etapas = []
+    percentuais = []
+    
+    # Tentar extrair da estrutura do plano
+    linhas = estrutura_texto.split('\n') if estrutura_texto else []
+    for linha in linhas:
+        for etapa in ETAPAS_FUNIL:
+            if etapa in linha:
+                match = re.search(r'(\d+)%', linha)
+                if match:
+                    etapas.append(etapa)
+                    percentuais.append(int(match.group(1)))
+                    break
+    
+    # Se não encontrou, usar template baseado nos objetivos
+    if not etapas:
+        # Distribuição exemplo balanceada
+        etapas = ETAPAS_FUNIL
+        percentuais = [25, 15, 15, 15, 20, 10]
+    
+    # Criar DataFrame
+    df = pd.DataFrame({
+        'Etapa do Funil': etapas,
+        'Alocação (%)': percentuais
+    })
+    
+    # Criar gráfico de pizza/donut
+    fig = go.Figure(data=[go.Pie(
+        labels=df['Etapa do Funil'],
+        values=df['Alocação (%)'],
+        hole=.4,
+        marker=dict(colors=px.colors.qualitative.Pastel),
+        textinfo='label+percent',
+        textposition='auto',
+        hovertemplate='<b>%{label}</b><br>Alocação: %{value}%<extra></extra>'
+    )])
+    
+    fig.update_layout(
+        title='Distribuição de Budget por Etapa do Funil',
+        height=400,
+        annotations=[dict(text='Budget por Funil', x=0.5, y=0.5, font_size=12, showarrow=False)]
+    )
+    
+    return fig
+
+def criar_grafico_cronograma(fases_texto, orcamento_total):
+    """Cria gráfico de Gantt para o cronograma de execução"""
+    
+    # Tentar extrair fases e durações do texto
+    fases = []
+    inicio = []
+    fim = []
+    budgets = []
+    
+    data_inicio = datetime.now().replace(day=1)
+    
+    # Padrão: procurar por "Fase X" ou "Mês X"
+    linhas = fases_texto.split('\n')
+    fase_atual = None
+    duracao_semanas = 4  # padrão
+    
+    for i, linha in enumerate(linhas):
+        # Procurar por títulos de fase
+        if 'FASE' in linha.upper() or 'MÊS' in linha.upper():
+            match = re.search(r'(FASE|MÊS)\s*(\d+)[:\s]*(.*?)(?:\*\*|$)', linha, re.IGNORECASE)
+            if match:
+                num_fase = match.group(2)
+                nome_fase = match.group(3).strip() if match.group(3) else f"Fase {num_fase}"
+                fase_atual = f"Fase {num_fase}: {nome_fase[:30]}"
+                
+                # Tentar encontrar duração nas próximas linhas
+                for j in range(1, 5):
+                    if i+j < len(linhas):
+                        linha_seguinte = linhas[i+j]
+                        if 'dura' in linha_seguinte.lower() or 'semana' in linha_seguinte.lower():
+                            match_duracao = re.search(r'(\d+)\s*semanas?', linha_seguinte, re.IGNORECASE)
+                            if match_duracao:
+                                duracao_semanas = int(match_duracao.group(1))
+                                break
+                
+                # Adicionar fase
+                fases.append(fase_atual)
+                data_fim = data_inicio + timedelta(weeks=duracao_semanas) if fases else data_inicio + timedelta(weeks=4)
+                inicio.append(data_inicio.strftime('%Y-%m-%d'))
+                fim.append(data_fim.strftime('%Y-%m-%d'))
+                
+                # Budget estimado (distribuição uniforme como fallback)
+                budgets.append(orcamento_total / (len(linhas) // 20 + 1))
+                
+                data_inicio = data_fim
+    
+    # Se não encontrou fases, criar exemplo
+    if not fases:
+        fases = ["Fase 1: Aquecimento", "Fase 2: Lançamento", "Fase 3: Sustentação"]
+        data_hoje = datetime.now().replace(day=1)
+        for i, fase in enumerate(fases):
+            inicio.append((data_hoje + timedelta(weeks=i*4)).strftime('%Y-%m-%d'))
+            fim.append((data_hoje + timedelta(weeks=(i+1)*4)).strftime('%Y-%m-%d'))
+            budgets.append(orcamento_total / 3)
+    
+    # Criar DataFrame para o Gantt
+    df_gantt = pd.DataFrame({
+        'Fase': fases,
+        'Início': pd.to_datetime(inicio),
+        'Fim': pd.to_datetime(fim),
+        'Budget (R$)': budgets
+    })
+    
+    # Criar gráfico de Gantt
+    fig = px.timeline(
+        df_gantt,
+        x_start='Início',
+        x_end='Fim',
+        y='Fase',
+        color='Budget (R$)',
+        color_continuous_scale='Viridis',
+        title='Cronograma de Execução por Fase',
+        labels={'Fase': '', 'color': 'Budget (R$)'}
+    )
+    
+    fig.update_yaxes(autorange="reversed")
+    fig.update_layout(
+        height=400,
+        xaxis_title='Data',
+        showlegend=False
+    )
+    
+    # Formatar hover
+    fig.update_traces(
+        hovertemplate='<b>%{y}</b><br>Início: %{x|%d/%m/%Y}<br>Término: %{x|%d/%m/%Y}<br>Budget: R$ %{customdata[0]:,.0f}<extra></extra>',
+        customdata=df_gantt[['Budget (R$)']]
+    )
+    
+    return fig
+
+def criar_grafico_projecao_metricas(orcamento_total):
+    """Cria gráfico de projeção de métricas baseado em benchmarks"""
+    
+    # Estimativas baseadas em benchmarks
+    metricas = {
+        'Alcance (milhões)': orcamento_total / 15 * 1.2,  # ~1.2M por R$15k
+        'Impressões (milhões)': orcamento_total / 15 * 3,
+        'Cliques (milhares)': orcamento_total / 15 * 12,
+        'Leads': orcamento_total / 15 * 150,
+        'Conversões': orcamento_total / 15 * 30
+    }
+    
+    df = pd.DataFrame({
+        'Métrica': list(metricas.keys()),
+        'Projeção': list(metricas.values())
+    })
+    
+    fig = px.bar(
+        df,
+        x='Métrica',
+        y='Projeção',
+        title='Projeção de Métricas (Baseado em Benchmarks)',
+        text=df['Projeção'].round(0).astype(int),
+        color='Projeção',
+        color_continuous_scale='Greens'
+    )
+    
+    fig.update_traces(textposition='outside')
+    fig.update_layout(
+        height=400,
+        xaxis_tickangle=-45,
+        showlegend=False,
+        coloraxis_showscale=False,
+        yaxis_title='Volume Projetado'
+    )
+    
+    return fig
+
+def criar_grafico_comparativo_benchmarks():
+    """Cria gráfico comparativo de benchmarks por plataforma"""
+    
+    dados = []
+    for plataforma, metricas in BENCHMARKS_BR.items():
+        if 'CPM' in metricas:
+            dados.append({
+                'Plataforma': plataforma,
+                'CPM Médio (R$)': metricas['CPM']['medio'],
+                'CPC Médio (R$)': metricas.get('CPC', {}).get('medio', 0),
+                'CTR Médio (%)': metricas.get('CTR', {}).get('medio', 0)
+            })
+    
+    df = pd.DataFrame(dados)
+    
+    # Criar subplots
+    fig = make_subplots(
+        rows=1, cols=3,
+        subplot_titles=('CPM Médio (R$)', 'CPC Médio (R$)', 'CTR Médio (%)'),
+        shared_yaxes=False
+    )
+    
+    # Adicionar barras para CPM
+    fig.add_trace(
+        go.Bar(x=df['Plataforma'], y=df['CPM Médio (R$)'], name='CPM', marker_color='rgb(55, 83, 109)'),
+        row=1, col=1
+    )
+    
+    # Adicionar barras para CPC
+    fig.add_trace(
+        go.Bar(x=df['Plataforma'], y=df['CPC Médio (R$)'], name='CPC', marker_color='rgb(26, 118, 255)'),
+        row=1, col=2
+    )
+    
+    # Adicionar barras para CTR
+    fig.add_trace(
+        go.Bar(x=df['Plataforma'], y=df['CTR Médio (%)'], name='CTR', marker_color='rgb(50, 171, 96)'),
+        row=1, col=3
+    )
+    
+    fig.update_layout(
+        title='Comparativo de Benchmarks por Plataforma',
+        height=400,
+        showlegend=False,
+        hovermode='x unified'
+    )
+    
+    fig.update_xaxes(tickangle=45)
+    
+    return fig
+
+def criar_grafico_okr_radar(metas_okr):
+    """Cria gráfico de radar para visualizar OKRs"""
+    
+    if not metas_okr:
+        return None
+    
+    # Preparar dados
+    categorias = []
+    valores = []
+    
+    for fase, metas in list(metas_okr.items())[:6]:  # Limitar a 6 fases
+        categorias.append(fase[:20])
+        # Usar número de metas como proxy de complexidade
+        valores.append(len(metas) * 20)
+    
+    if not categorias:
+        return None
+    
+    # Criar gráfico de radar
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatterpolar(
+        r=valores,
+        theta=categorias,
+        fill='toself',
+        name='Intensidade de OKRs',
+        line_color='rgb(31, 119, 180)',
+        fillcolor='rgba(31, 119, 180, 0.3)'
+    ))
+    
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100]
+            )),
+        title='Distribuição de OKRs por Fase',
+        height=400,
+        showlegend=False
+    )
+    
+    return fig
+
+# ============================================================================
+# FUNÇÕES DE GERAÇÃO (adaptadas para incluir área geográfica)
+# ============================================================================
+
+def gerar_analise_inicial(cliente, orcamento, objetivos, contexto, canais_preferencia, area_geografica,
                          instrucoes_refinamento=None, versao_anterior=None):
     """Etapa 1: Análise inicial - Diagnóstico do negócio"""
     
@@ -439,6 +775,7 @@ O usuário pediu ajustes específicos. MANTENHA a estrutura geral, mas refine AP
 **DADOS DO CLIENTE:**
 - Cliente: {cliente}
 - Orçamento: R$ {orcamento:,.2f}
+- Área Geográfica: {area_geografica}
 - Objetivos: {objetivos}
 - Contexto: {contexto}
 - Canais de Interesse: {canais_preferencia}
@@ -452,6 +789,7 @@ Você é um Estrategista de Mídias Pagas Sênior. Faça uma ANÁLISE INICIAL de
 **DADOS DO CLIENTE:**
 - Cliente: {cliente}
 - Orçamento Total: R$ {orcamento:,.2f}
+- Área Geográfica de Atuação: {area_geografica}
 - Objetivos Principais: {objetivos}
 - Contexto/Desafios: {contexto}
 - Canais de Interesse: {canais_preferencia if canais_preferencia else "A definir"}
@@ -467,16 +805,20 @@ Você é um Estrategista de Mídias Pagas Sênior. Faça uma ANÁLISE INICIAL de
 - Google Ads: CPM R$5-35, CPC R$1-8, CTR 2-8%
 - WhatsApp: 93,7% penetração, 55% conversão
 
+**CONSIDERAÇÕES POR ÁREA GEOGRÁFICA:**
+- Se {area_geografica} for nacional: considerar diferenças regionais (Sudeste vs Nordeste)
+- Se {area_geografica} for estadual/municipal: ajustar CPMs e concorrência local
+
 **ESTRUTURA DA ANÁLISE:**
 
 ## 1. DIAGNÓSTICO DO NEGÓCIO
-[Análise do cliente, seus desafios e oportunidades]
+[Análise do cliente, seus desafios e oportunidades considerando a área geográfica {area_geografica}]
 
 ## 2. POTENCIAL DO ORÇAMENTO
-[O que R$ {orcamento:,.2f} pode entregar no Brasil - projeções de alcance, cliques, leads]
+[O que R$ {orcamento:,.2f} pode entregar em {area_geografica} - projeções de alcance, cliques, leads]
 
 ## 3. DIRECIONAMENTOS ESTRATÉGICOS INICIAIS
-[Recomendações preliminares baseadas nos objetivos]
+[Recomendações preliminares baseadas nos objetivos e área geográfica]
 
 ## 4. PONTOS CRÍTICOS A CONSIDERAR
 [Questões que precisam ser endereçadas no planejamento]
@@ -485,7 +827,7 @@ Você é um Estrategista de Mídias Pagas Sênior. Faça uma ANÁLISE INICIAL de
     return response.text
 
 
-def recomendar_arquitetura_canais(analise_inicial, objetivos, orcamento, canais_preferencia,
+def recomendar_arquitetura_canais(analise_inicial, objetivos, orcamento, canais_preferencia, area_geografica,
                                   instrucoes_refinamento=None, versao_anterior=None):
     """Etapa 2: Arquitetura de canais - Definição dos canais por etapa do funil"""
     
@@ -503,6 +845,7 @@ O usuário pediu ajustes específicos. MANTENHA a estrutura geral, mas refine AP
 **CONTEXTO:**
 - Objetivos: {objetivos}
 - Orçamento: R$ {orcamento:,.2f}
+- Área Geográfica: {area_geografica}
 
 Retorne a versão COMPLETA da arquitetura, aplicando apenas os refinamentos.
 """
@@ -515,6 +858,7 @@ Você é um Estrategista de Mídias Pagas Sênior. Com base na análise inicial,
 
 **Objetivos:** {objetivos}
 **Orçamento:** R$ {orcamento:,.2f}
+**Área Geográfica:** {area_geografica}
 **Canais considerados:** {canais_preferencia if canais_preferencia else "A definir"}
 
 **ALINHAMENTO CANAL X ETAPA DO FUNIL:**
@@ -529,30 +873,40 @@ Você é um Estrategista de Mídias Pagas Sênior. Com base na análise inicial,
 | WhatsApp | Intenção, Conversão, Retenção | 93,7% penetração, 55% conversão |
 | Programática | Consciência, Retenção | Alcance complementar, frequency capping |
 
+**CONSIDERAÇÕES PARA {area_geografica}:**
+- [Ajustar recomendações com base na área geográfica - densidade populacional, hábitos de consumo de mídia, etc.]
+
 **ESTRUTURA DA RECOMENDAÇÃO:**
 
 ## 1. ARQUITETURA DE CANAIS RECOMENDADA
-[Lista dos canais selecionados e justificativa para cada um]
+[Lista dos canais selecionados e justificativa para cada um, considerando {area_geografica}]
 
 ## 2. FUNÇÃO DE CADA CANAL NA JORNADA
 [Qual etapa do funil cada canal atende e por quê]
 
 ## 3. ALOCAÇÃO DE BUDGET POR CANAL
 [Tabela com percentuais e valores em R$, com justificativa baseada em benchmarks]
+Forneça os dados em formato que possa ser extraído para gráficos (percentuais claros)
 
 ## 4. SINERGIA ENTRE CANAIS
 [Como os canais trabalham juntos - fluxo de tráfego e remarketing]
 
-## 5. PROJEÇÕES DE PERFORMANCE
-[Estimativas de alcance, cliques, leads com base nos benchmarks BR]
+## 5. PROJEÇÕES DE PERFORMANCE PARA {area_geografica}
+[Estimativas de alcance, cliques, leads com base nos benchmarks BR ajustados para a região]
 """
     response = modelo.generate_content(prompt)
     return response.text
 
 
-def definir_estrutura_plano(arquitetura_canais, objetivos, cliente, orcamento,
+def definir_estrutura_plano(arquitetura_canais, objetivos, cliente, orcamento, area_geografica, metas_iniciais=None,
                            instrucoes_refinamento=None, versao_anterior=None):
     """Etapa 3: Estrutura do plano - Definição das fases e alocação por etapa do funil"""
+    
+    metas_texto = ""
+    if metas_iniciais:
+        metas_texto = "\n**METAS GLOBAIS DO PLANO (definidas pelo cliente):**\n"
+        for meta in metas_iniciais:
+            metas_texto += f"- {meta}\n"
     
     if instrucoes_refinamento and versao_anterior:
         prompt = f"""
@@ -582,7 +936,10 @@ Você é um Estrategista de Mídias Pagas Sênior. Defina a ESTRUTURA DO PLANO.
 
 **Cliente:** {cliente}
 **Objetivos:** {objetivos}
+**Área Geográfica:** {area_geografica}
 **Orçamento Total:** R$ {orcamento:,.2f}
+
+{metas_texto}
 
 **TEMPLATES DE ALOCAÇÃO POR ETAPA (referência):**
 {templates_texto}
@@ -599,14 +956,15 @@ Você é um Estrategista de Mídias Pagas Sênior. Defina a ESTRUTURA DO PLANO.
 
 ## 1. MODELO DE ALOCAÇÃO POR ETAPA DO FUNIL
 [Percentual do budget dedicado a cada etapa, com justificativa baseada nos objetivos]
+Forneça percentuais claros que possam ser visualizados em gráficos.
 
 ## 2. FASES DO PLANO
 [Defina 2-4 fases sequenciais, cada uma com:]
 - Nome da fase
-- Duração sugerida
+- Duração sugerida (em semanas)
 - Etapas do funil priorizadas
 - Alocação de budget (percentual do total)
-- OKRs principais da fase
+- OKRs principais da fase (considerando as metas globais definidas)
 
 ## 3. FLUXO DE INFORMAÇÕES ENTRE FASES
 [Como uma fase alimenta a próxima - ex: fase 1 gera audiência para remarketing na fase 2]
@@ -618,7 +976,7 @@ Você é um Estrategista de Mídias Pagas Sênior. Defina a ESTRUTURA DO PLANO.
     return response.text
 
 
-def detalhar_fases(estrutura_plano, arquitetura_canais, orcamento, cliente, objetivos,
+def detalhar_fases(estrutura_plano, arquitetura_canais, orcamento, cliente, objetivos, area_geografica,
                    metas_okr=None, instrucoes_refinamento=None, versao_anterior=None):
     """Etapa 4: Detalhamento tático de cada fase"""
     
@@ -657,6 +1015,7 @@ Você é um Estrategista de Mídias Pagas Sênior. Detalhe CADA FASE do plano.
 
 **Cliente:** {cliente}
 **Objetivos:** {objetivos}
+**Área Geográfica:** {area_geografica}
 **Orçamento Total:** R$ {orcamento:,.2f}
 
 {metas_texto}
@@ -678,7 +1037,7 @@ Você é um Estrategista de Mídias Pagas Sênior. Detalhe CADA FASE do plano.
   * Canal B: R$ [X] ([Y]%) - Justificativa
 
 **🎯 PÚBLICO-ALVO**
-- Segmentação primária:
+- Segmentação primária (considerando {area_geografica}):
 - Segmentação secundária:
 - Listas de remarketing a construir:
 
@@ -703,13 +1062,13 @@ Você é um Estrategista de Mídias Pagas Sênior. Detalhe CADA FASE do plano.
 - O que esta fase entrega para a fase seguinte:
 - Audiências a nutrir para remarketing:
 
-[Repita para cada fase]
+[Repita para cada fase identificada na estrutura do plano]
 """
     response = modelo.generate_content(prompt)
     return response.text
 
 
-def criar_cronograma(fases_detalhadas, cliente, orcamento,
+def criar_cronograma(fases_detalhadas, cliente, orcamento, area_geografica,
                     instrucoes_refinamento=None, versao_anterior=None):
     """Etapa 5: Cronograma de execução"""
     
@@ -734,12 +1093,13 @@ Você é um Estrategista de Mídias Pagas Sênior. Crie um CRONOGRAMA DE EXECUÇ
 {fases_detalhadas[:800]}...
 
 **Cliente:** {cliente}
+**Área Geográfica:** {area_geografica}
 **Orçamento Total:** R$ {orcamento:,.2f}
 
 **ESTRUTURA DO CRONOGRAMA:**
 
 ## 1. VISÃO GERAL DA EXECUÇÃO
-[Parágrafo resumindo a sequência e duração total]
+[Parágrafo resumindo a sequência e duração total, considerando particularidades de {area_geografica}]
 
 ## 2. CRONOGRAMA MÊS A MÊS
 
@@ -756,12 +1116,12 @@ Você é um Estrategista de Mídias Pagas Sênior. Crie um CRONOGRAMA DE EXECUÇ
 **MÊS 2 - [NOME DA FASE]**
 [mesma estrutura...]
 
-[Continuar para todos os meses]
+[Continuar para todos os meses, garantindo que as datas estejam claras para visualização em gráfico]
 
 ## 3. MARCOS DE AVALIAÇÃO
-- [Data]: Revisão de performance e realocação de budget
-- [Data]: Teste A/B de criativos
-- [Data]: Avaliação de resultados e planejamento próximo mês
+- [Data específica]: Revisão de performance e realocação de budget
+- [Data específica]: Teste A/B de criativos
+- [Data específica]: Avaliação de resultados e planejamento próximo mês
 
 ## 4. GATILHOS DE ATIVAÇÃO
 - [Evento]: Dispara [ação]
@@ -777,7 +1137,7 @@ Você é um Estrategista de Mídias Pagas Sênior. Crie um CRONOGRAMA DE EXECUÇ
     return response.text
 
 
-def gerar_recomendacoes_executivas(plano_completo, cliente, objetivos,
+def gerar_recomendacoes_executivas(plano_completo, cliente, objetivos, area_geografica,
                                   instrucoes_refinamento=None, versao_anterior=None):
     """Etapa 6: Recomendações executivas e próximos passos"""
     
@@ -802,12 +1162,13 @@ Você é um Estrategista de Mídias Pagas Sênior. Gere RECOMENDAÇÕES EXECUTIV
 {plano_completo[:1000]}...
 
 **Cliente:** {cliente}
+**Área Geográfica:** {area_geografica}
 **Objetivos originais:** {objetivos}
 
 **ESTRUTURA DAS RECOMENDAÇÕES:**
 
 ## 1. SÍNTESE EXECUTIVA
-[Resumo do plano em 1 parágrafo - alocação de budget, principais canais, fases]
+[Resumo do plano em 1 parágrafo - alocação de budget, principais canais, fases, considerações para {area_geografica}]
 
 ## 2. RECOMENDAÇÕES DE OTIMIZAÇÃO CONTÍNUA
 - O que monitorar diariamente:
@@ -876,8 +1237,46 @@ def render_refinamento_box(etapa_nome, etapa_chave, funcao_gerar, **kwargs):
                     st.rerun()
 
 
+def render_metas_iniciais_editor():
+    """Editor de metas OKR no início do planejamento"""
+    
+    st.markdown("---")
+    st.subheader("🎯 Metas do Plano")
+    st.markdown("Defina as metas globais que o plano deve alcançar:")
+    
+    metas = []
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**Meta 1**")
+        metrica1 = st.selectbox("Métrica", ["Alcance", "Impressões", "CTR", "CPC", "Leads", "CPL", "Conversões", "CPA", "ROAS", "Receita"], key="meta1_metrica")
+        valor1 = st.text_input("Valor", key="meta1_valor", placeholder="Ex: 500000")
+        unidade1 = "milhões" if metrica1 in ["Alcance", "Impressões"] else ("%" if metrica1 == "CTR" else ("R$" if metrica1 in ["CPC", "CPL", "CPA", "Receita"] else ("x" if metrica1 == "ROAS" else "")))
+        if metrica1 and valor1:
+            metas.append(f"{metrica1}: {valor1} {unidade1}")
+    
+    with col2:
+        st.markdown("**Meta 2**")
+        metrica2 = st.selectbox("Métrica", ["Alcance", "Impressões", "CTR", "CPC", "Leads", "CPL", "Conversões", "CPA", "ROAS", "Receita"], key="meta2_metrica", index=4)
+        valor2 = st.text_input("Valor", key="meta2_valor", placeholder="Ex: 1000")
+        unidade2 = "milhões" if metrica2 in ["Alcance", "Impressões"] else ("%" if metrica2 == "CTR" else ("R$" if metrica2 in ["CPC", "CPL", "CPA", "Receita"] else ("x" if metrica2 == "ROAS" else "")))
+        if metrica2 and valor2:
+            metas.append(f"{metrica2}: {valor2} {unidade2}")
+    
+    with col3:
+        st.markdown("**Meta 3**")
+        metrica3 = st.selectbox("Métrica", ["Alcance", "Impressões", "CTR", "CPC", "Leads", "CPL", "Conversões", "CPA", "ROAS", "Receita"], key="meta3_metrica", index=6)
+        valor3 = st.text_input("Valor", key="meta3_valor", placeholder="Ex: 200")
+        unidade3 = "milhões" if metrica3 in ["Alcance", "Impressões"] else ("%" if metrica3 == "CTR" else ("R$" if metrica3 in ["CPC", "CPL", "CPA", "Receita"] else ("x" if metrica3 == "ROAS" else "")))
+        if metrica3 and valor3:
+            metas.append(f"{metrica3}: {valor3} {unidade3}")
+    
+    return metas
+
+
 def render_metas_okr_editor(fases_detalhadas):
-    """Editor de metas OKR"""
+    """Editor de metas OKR por fase"""
     
     st.markdown("---")
     st.subheader("🎯 Definir Metas por Fase")
@@ -895,11 +1294,11 @@ def render_metas_okr_editor(fases_detalhadas):
                 fases.append(f"Fase {match.group(1)}: {match.group(2).strip()}")
     
     if not fases:
-        fases = ["Fase 1", "Fase 2", "Fase 3"]
+        fases = ["Fase 1", "Fase 2", "Fase 3", "Fase 4"]
     
     # Tabs para cada fase
     if fases:
-        tabs = st.tabs([f"📊 {f}" for f in fases])
+        tabs = st.tabs([f"📊 {f[:20]}..." for f in fases])
         
         for idx, (fase, tab) in enumerate(zip(fases, tabs)):
             with tab:
@@ -924,7 +1323,7 @@ def render_metas_okr_editor(fases_detalhadas):
                             ["Alcance", "Impressões", "CPM", "CTR", "CPC", "Leads", "CPL", "Conversões", "CPA", "ROAS", "Outro"],
                             key=f"metrica_{fase}_{i}",
                             label_visibility="collapsed",
-                            index=0 if i == 0 else (1 if i == 1 else 2)
+                            index=i
                         )
                     
                     with col2:
@@ -947,13 +1346,16 @@ def render_metas_okr_editor(fases_detalhadas):
                         else:
                             unidade = st.text_input("Unidade", key=f"unidade_{fase}_{i}", placeholder="unid", label_visibility="collapsed")
                     
-                    if metrica and valor:
-                        if metrica != "Outro":
-                            metas_fase.append(f"{metrica}: {valor} {unidade if unidade else ''}")
-                        else:
+                    if metrica and valor and metrica != "Outro":
+                        metas_fase.append(f"{metrica}: {valor} {unidade if unidade else ''}")
+                    elif metrica == "Outro":
+                        col_extra1, col_extra2 = st.columns(2)
+                        with col_extra1:
                             outra_metrica = st.text_input("Qual métrica?", key=f"outra_{fase}_{i}")
-                            if outra_metrica:
-                                metas_fase.append(f"{outra_metrica}: {valor} {unidade if unidade else ''}")
+                        with col_extra2:
+                            outra_unidade = st.text_input("Unidade", key=f"outra_unid_{fase}_{i}", placeholder="ex: unidades")
+                        if outra_metrica and valor:
+                            metas_fase.append(f"{outra_metrica}: {valor} {outra_unidade if outra_unidade else ''}")
                 
                 if metas_fase:
                     metas_por_fase[fase] = metas_fase
@@ -980,6 +1382,8 @@ Este planejador cria um plano tático completo de mídias pagas, com fluxo lógi
 4. **Detalhamento** → táticas por fase com OKRs
 5. **Cronograma** → execução mês a mês
 6. **Recomendações** → próximos passos e otimizações
+
+O plano incluirá visualizações gráficas de alocação de budget, cronograma e projeções de métricas.
 """)
 st.markdown("---")
 
@@ -994,6 +1398,8 @@ if 'plano_final' not in st.session_state:
     st.session_state.plano_final = None
 if 'metas_okr' not in st.session_state:
     st.session_state.metas_okr = {}
+if 'metas_iniciais' not in st.session_state:
+    st.session_state.metas_iniciais = []
 
 # Sidebar com progresso
 with st.sidebar:
@@ -1021,8 +1427,9 @@ with st.sidebar:
     if st.session_state.dados_coletados:
         st.markdown(f"**Cliente:** {st.session_state.dados_coletados.get('cliente', '')}")
         st.markdown(f"**Orçamento:** R$ {st.session_state.dados_coletados.get('orcamento', 0):,.2f}")
+        st.markdown(f"**Área:** {st.session_state.dados_coletados.get('area_geografica', '')}")
 
-# ETAPA 1: Diagnóstico Inicial
+# ETAPA 1: Diagnóstico Inicial (com metas e área geográfica)
 if st.session_state.etapa_atual == 1:
     st.header("1. Diagnóstico Inicial")
     st.markdown("Preencha os dados para iniciar o planejamento.")
@@ -1033,6 +1440,7 @@ if st.session_state.etapa_atual == 1:
         with col1:
             cliente = st.text_input("Cliente *", placeholder="Ex: Loja de Roupas Sustentável")
             orcamento = st.number_input("Orçamento Total (R$) *", min_value=0.0, step=1000.0, format="%.2f")
+            area_geografica = st.text_input("Área Geográfica de Atuação *", placeholder="Ex: Brasil, Sudeste, São Paulo, Região Metropolitana de SP...")
             
         with col2:
             canais = st.multiselect(
@@ -1050,32 +1458,62 @@ if st.session_state.etapa_atual == 1:
         submitted = st.form_submit_button("🚀 Gerar Diagnóstico", use_container_width=True)
         
         if submitted:
-            if cliente and orcamento and objetivos and contexto:
+            if cliente and orcamento and objetivos and contexto and area_geografica:
                 with st.spinner("Gerando diagnóstico..."):
                     st.session_state.dados_coletados = {
                         'cliente': cliente,
                         'orcamento': orcamento,
+                        'area_geografica': area_geografica,
                         'objetivos': objetivos,
                         'contexto': contexto,
                         'canais_preferencia': canais
                     }
                     
-                    analise = gerar_analise_inicial(
-                        cliente, orcamento, objetivos, contexto,
-                        ", ".join(canais) if canais else "A definir"
-                    )
-                    st.session_state.narrativa_gerada['analise_inicial'] = analise
-                    st.session_state.etapa_atual = 2
+                    # Renderizar editor de metas após o diagnóstico
+                    st.session_state.etapa_atual = 1.5
                     st.rerun()
             else:
                 st.error("Preencha todos os campos obrigatórios (*)")
 
-# ETAPA 2: Arquitetura de Canais
+# ETAPA 1.5: Definição de Metas
+elif st.session_state.etapa_atual == 1.5:
+    st.header("1.5 Definição de Metas do Plano")
+    st.markdown("Defina as metas globais que este plano deve alcançar.")
+    
+    metas = render_metas_iniciais_editor()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Salvar Metas e Continuar", use_container_width=True):
+            st.session_state.metas_iniciais = metas
+            with st.spinner("Gerando análise inicial..."):
+                analise = gerar_analise_inicial(
+                    st.session_state.dados_coletados['cliente'],
+                    st.session_state.dados_coletados['orcamento'],
+                    st.session_state.dados_coletados['objetivos'],
+                    st.session_state.dados_coletados['contexto'],
+                    ", ".join(st.session_state.dados_coletados['canais_preferencia']) if st.session_state.dados_coletados['canais_preferencia'] else "A definir",
+                    st.session_state.dados_coletados['area_geografica']
+                )
+                st.session_state.narrativa_gerada['analise_inicial'] = analise
+                st.session_state.etapa_atual = 2
+                st.rerun()
+    
+    with col2:
+        if st.button("↩️ Voltar", use_container_width=True):
+            st.session_state.etapa_atual = 1
+            st.rerun()
+
+# ETAPA 2: Análise Inicial
 elif st.session_state.etapa_atual == 2:
-    st.header("2. Arquitetura de Canais")
-    st.markdown("Definição dos canais por etapa do funil e alocação de budget.")
+    st.header("1. Diagnóstico Inicial (Resultado)")
     
     st.markdown(st.session_state.narrativa_gerada['analise_inicial'])
+    
+    # Gráfico de benchmarks para contexto
+    with st.expander("📊 Comparativo de Benchmarks por Plataforma", expanded=False):
+        fig_bench = criar_grafico_comparativo_benchmarks()
+        st.plotly_chart(fig_bench, use_container_width=True)
     
     render_refinamento_box(
         "análise inicial",
@@ -1085,7 +1523,8 @@ elif st.session_state.etapa_atual == 2:
         orcamento=st.session_state.dados_coletados['orcamento'],
         objetivos=st.session_state.dados_coletados['objetivos'],
         contexto=st.session_state.dados_coletados['contexto'],
-        canais_preferencia=", ".join(st.session_state.dados_coletados['canais_preferencia']) if st.session_state.dados_coletados['canais_preferencia'] else "A definir"
+        canais_preferencia=", ".join(st.session_state.dados_coletados['canais_preferencia']) if st.session_state.dados_coletados['canais_preferencia'] else "A definir",
+        area_geografica=st.session_state.dados_coletados['area_geografica']
     )
     
     col1, col2 = st.columns(2)
@@ -1096,22 +1535,36 @@ elif st.session_state.etapa_atual == 2:
                     st.session_state.narrativa_gerada['analise_inicial'],
                     st.session_state.dados_coletados['objetivos'],
                     st.session_state.dados_coletados['orcamento'],
-                    ", ".join(st.session_state.dados_coletados['canais_preferencia']) if st.session_state.dados_coletados['canais_preferencia'] else "Definir"
+                    ", ".join(st.session_state.dados_coletados['canais_preferencia']) if st.session_state.dados_coletados['canais_preferencia'] else "Definir",
+                    st.session_state.dados_coletados['area_geografica']
                 )
                 st.session_state.narrativa_gerada['arquitetura_canais'] = arquitetura
                 st.session_state.etapa_atual = 3
                 st.rerun()
     
     with col2:
-        if st.button("↩️ Voltar", use_container_width=True):
-            st.session_state.etapa_atual = 1
+        if st.button("↩️ Voltar para Metas", use_container_width=True):
+            st.session_state.etapa_atual = 1.5
             st.rerun()
 
-# ETAPA 3: Arquitetura de Canais (resultado)
+# ETAPA 3: Arquitetura de Canais
 elif st.session_state.etapa_atual == 3:
-    st.header("2. Arquitetura de Canais (Resultado)")
+    st.header("2. Arquitetura de Canais")
     
     st.markdown(st.session_state.narrativa_gerada['arquitetura_canais'])
+    
+    # Gráfico de alocação de budget
+    st.subheader("📊 Visualização da Alocação de Budget")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        fig_budget = criar_grafico_alocacao_budget(st.session_state.narrativa_gerada['arquitetura_canais'])
+        st.plotly_chart(fig_budget, use_container_width=True)
+    
+    with col2:
+        # Gráfico de projeção de métricas
+        fig_projecao = criar_grafico_projecao_metricas(st.session_state.dados_coletados['orcamento'])
+        st.plotly_chart(fig_projecao, use_container_width=True)
     
     render_refinamento_box(
         "arquitetura de canais",
@@ -1120,7 +1573,8 @@ elif st.session_state.etapa_atual == 3:
         analise_inicial=st.session_state.narrativa_gerada['analise_inicial'],
         objetivos=st.session_state.dados_coletados['objetivos'],
         orcamento=st.session_state.dados_coletados['orcamento'],
-        canais_preferencia=", ".join(st.session_state.dados_coletados['canais_preferencia']) if st.session_state.dados_coletados['canais_preferencia'] else "Definir"
+        canais_preferencia=", ".join(st.session_state.dados_coletados['canais_preferencia']) if st.session_state.dados_coletados['canais_preferencia'] else "Definir",
+        area_geografica=st.session_state.dados_coletados['area_geografica']
     )
     
     col1, col2 = st.columns(2)
@@ -1131,7 +1585,9 @@ elif st.session_state.etapa_atual == 3:
                     st.session_state.narrativa_gerada['arquitetura_canais'],
                     st.session_state.dados_coletados['objetivos'],
                     st.session_state.dados_coletados['cliente'],
-                    st.session_state.dados_coletados['orcamento']
+                    st.session_state.dados_coletados['orcamento'],
+                    st.session_state.dados_coletados['area_geografica'],
+                    metas_iniciais=st.session_state.metas_iniciais
                 )
                 st.session_state.narrativa_gerada['estrutura_plano'] = estrutura
                 st.session_state.etapa_atual = 4
@@ -1145,9 +1601,16 @@ elif st.session_state.etapa_atual == 3:
 # ETAPA 4: Estrutura do Plano
 elif st.session_state.etapa_atual == 4:
     st.header("3. Estrutura do Plano")
-    st.markdown("Definição das fases e alocação por etapa do funil.")
     
     st.markdown(st.session_state.narrativa_gerada['estrutura_plano'])
+    
+    # Gráfico de alocação por etapa do funil
+    st.subheader("📊 Distribuição de Budget por Etapa do Funil")
+    fig_funil = criar_grafico_alocacao_funil(
+        st.session_state.narrativa_gerada['arquitetura_canais'],
+        st.session_state.narrativa_gerada['estrutura_plano']
+    )
+    st.plotly_chart(fig_funil, use_container_width=True)
     
     st.markdown("---")
     
@@ -1180,7 +1643,9 @@ elif st.session_state.etapa_atual == 4:
         arquitetura_canais=st.session_state.narrativa_gerada['arquitetura_canais'],
         objetivos=st.session_state.dados_coletados['objetivos'],
         cliente=st.session_state.dados_coletados['cliente'],
-        orcamento=st.session_state.dados_coletados['orcamento']
+        orcamento=st.session_state.dados_coletados['orcamento'],
+        area_geografica=st.session_state.dados_coletados['area_geografica'],
+        metas_iniciais=st.session_state.metas_iniciais
     )
 
 # ETAPA 5: Detalhamento Tático
@@ -1198,9 +1663,17 @@ elif st.session_state.etapa_atual == 5:
                 st.session_state.dados_coletados['orcamento'],
                 st.session_state.dados_coletados['cliente'],
                 st.session_state.dados_coletados['objetivos'],
+                st.session_state.dados_coletados['area_geografica'],
                 metas_okr=metas_okr
             )
             st.session_state.narrativa_gerada['fases_detalhadas'] = fases
+    
+    # Gráfico de radar de OKRs
+    if st.session_state.metas_okr:
+        with st.expander("📊 Visualização de OKRs por Fase", expanded=False):
+            fig_radar = criar_grafico_okr_radar(st.session_state.metas_okr)
+            if fig_radar:
+                st.plotly_chart(fig_radar, use_container_width=True)
     
     # Editor de OKRs
     with st.expander("🎯 Definir Metas por Fase", expanded=not st.session_state.metas_okr):
@@ -1216,6 +1689,7 @@ elif st.session_state.etapa_atual == 5:
                         st.session_state.dados_coletados['orcamento'],
                         st.session_state.dados_coletados['cliente'],
                         st.session_state.dados_coletados['objetivos'],
+                        st.session_state.dados_coletados['area_geografica'],
                         metas_okr=metas_okr
                     )
                     st.session_state.narrativa_gerada['fases_detalhadas'] = fases
@@ -1233,6 +1707,7 @@ elif st.session_state.etapa_atual == 5:
         orcamento=st.session_state.dados_coletados['orcamento'],
         cliente=st.session_state.dados_coletados['cliente'],
         objetivos=st.session_state.dados_coletados['objetivos'],
+        area_geografica=st.session_state.dados_coletados['area_geografica'],
         metas_okr=st.session_state.metas_okr
     )
     
@@ -1243,7 +1718,8 @@ elif st.session_state.etapa_atual == 5:
                 cronograma = criar_cronograma(
                     st.session_state.narrativa_gerada['fases_detalhadas'],
                     st.session_state.dados_coletados['cliente'],
-                    st.session_state.dados_coletados['orcamento']
+                    st.session_state.dados_coletados['orcamento'],
+                    st.session_state.dados_coletados['area_geografica']
                 )
                 st.session_state.narrativa_gerada['cronograma'] = cronograma
                 st.session_state.etapa_atual = 6
@@ -1260,13 +1736,22 @@ elif st.session_state.etapa_atual == 6:
     
     st.markdown(st.session_state.narrativa_gerada['cronograma'])
     
+    # Gráfico de Gantt do cronograma
+    st.subheader("📊 Linha do Tempo das Fases")
+    fig_gantt = criar_grafico_cronograma(
+        st.session_state.narrativa_gerada['fases_detalhadas'],
+        st.session_state.dados_coletados['orcamento']
+    )
+    st.plotly_chart(fig_gantt, use_container_width=True)
+    
     render_refinamento_box(
         "cronograma",
         'cronograma',
         criar_cronograma,
         fases_detalhadas=st.session_state.narrativa_gerada['fases_detalhadas'],
         cliente=st.session_state.dados_coletados['cliente'],
-        orcamento=st.session_state.dados_coletados['orcamento']
+        orcamento=st.session_state.dados_coletados['orcamento'],
+        area_geografica=st.session_state.dados_coletados['area_geografica']
     )
     
     col1, col2 = st.columns(2)
@@ -1275,6 +1760,10 @@ elif st.session_state.etapa_atual == 6:
             # Compilar plano completo
             plano_completo = f"""
 # PLANO TÁTICO DE MÍDIAS PAGAS - {st.session_state.dados_coletados['cliente'].upper()}
+
+**Área Geográfica:** {st.session_state.dados_coletados['area_geografica']}
+**Orçamento Total:** R$ {st.session_state.dados_coletados['orcamento']:,.2f}
+**Data de Geração:** {datetime.now().strftime('%d/%m/%Y')}
 
 ---
 
@@ -1310,7 +1799,8 @@ elif st.session_state.etapa_atual == 6:
                 recomendacoes = gerar_recomendacoes_executivas(
                     plano_completo,
                     st.session_state.dados_coletados['cliente'],
-                    st.session_state.dados_coletados['objetivos']
+                    st.session_state.dados_coletados['objetivos'],
+                    st.session_state.dados_coletados['area_geografica']
                 )
                 st.session_state.narrativa_gerada['recomendacoes'] = recomendacoes
                 st.session_state.plano_final = plano_completo + "\n\n" + recomendacoes
@@ -1331,6 +1821,41 @@ elif st.session_state.etapa_atual == 7:
     st.markdown(st.session_state.narrativa_gerada['recomendacoes'])
     
     st.markdown("---")
+    
+    # Dashboard de gráficos do plano
+    st.subheader("📊 Dashboard do Plano")
+    
+    tab1, tab2, tab3 = st.tabs(["Alocação de Budget", "Cronograma", "Projeções"])
+    
+    with tab1:
+        col1, col2 = st.columns(2)
+        with col1:
+            fig_budget = criar_grafico_alocacao_budget(st.session_state.narrativa_gerada['arquitetura_canais'])
+            st.plotly_chart(fig_budget, use_container_width=True)
+        with col2:
+            fig_funil = criar_grafico_alocacao_funil(
+                st.session_state.narrativa_gerada['arquitetura_canais'],
+                st.session_state.narrativa_gerada['estrutura_plano']
+            )
+            st.plotly_chart(fig_funil, use_container_width=True)
+    
+    with tab2:
+        fig_gantt = criar_grafico_cronograma(
+            st.session_state.narrativa_gerada['fases_detalhadas'],
+            st.session_state.dados_coletados['orcamento']
+        )
+        st.plotly_chart(fig_gantt, use_container_width=True)
+    
+    with tab3:
+        col1, col2 = st.columns(2)
+        with col1:
+            fig_projecao = criar_grafico_projecao_metricas(st.session_state.dados_coletados['orcamento'])
+            st.plotly_chart(fig_projecao, use_container_width=True)
+        with col2:
+            if st.session_state.metas_okr:
+                fig_radar = criar_grafico_okr_radar(st.session_state.metas_okr)
+                if fig_radar:
+                    st.plotly_chart(fig_radar, use_container_width=True)
     
     with st.expander("📄 Ver Plano Completo", expanded=False):
         st.markdown(st.session_state.plano_final)
@@ -1370,6 +1895,7 @@ elif st.session_state.etapa_atual == 7:
                         st.session_state.dados_coletados['objetivos'],
                         st.session_state.dados_coletados['contexto'],
                         ", ".join(st.session_state.dados_coletados['canais_preferencia']) if st.session_state.dados_coletados['canais_preferencia'] else "A definir",
+                        st.session_state.dados_coletados['area_geografica'],
                         instrucoes_refinamento=refinamento_final,
                         versao_anterior=st.session_state.narrativa_gerada['analise_inicial']
                     )
@@ -1380,6 +1906,7 @@ elif st.session_state.etapa_atual == 7:
                         st.session_state.dados_coletados['objetivos'],
                         st.session_state.dados_coletados['orcamento'],
                         ", ".join(st.session_state.dados_coletados['canais_preferencia']) if st.session_state.dados_coletados['canais_preferencia'] else "Definir",
+                        st.session_state.dados_coletados['area_geografica'],
                         instrucoes_refinamento=refinamento_final,
                         versao_anterior=st.session_state.narrativa_gerada['arquitetura_canais']
                     )
@@ -1390,6 +1917,8 @@ elif st.session_state.etapa_atual == 7:
                         st.session_state.dados_coletados['objetivos'],
                         st.session_state.dados_coletados['cliente'],
                         st.session_state.dados_coletados['orcamento'],
+                        st.session_state.dados_coletados['area_geografica'],
+                        metas_iniciais=st.session_state.metas_iniciais,
                         instrucoes_refinamento=refinamento_final,
                         versao_anterior=st.session_state.narrativa_gerada['estrutura_plano']
                     )
@@ -1401,6 +1930,7 @@ elif st.session_state.etapa_atual == 7:
                         st.session_state.dados_coletados['orcamento'],
                         st.session_state.dados_coletados['cliente'],
                         st.session_state.dados_coletados['objetivos'],
+                        st.session_state.dados_coletados['area_geografica'],
                         metas_okr=st.session_state.metas_okr,
                         instrucoes_refinamento=refinamento_final,
                         versao_anterior=st.session_state.narrativa_gerada['fases_detalhadas']
@@ -1411,6 +1941,7 @@ elif st.session_state.etapa_atual == 7:
                         fases,
                         st.session_state.dados_coletados['cliente'],
                         st.session_state.dados_coletados['orcamento'],
+                        st.session_state.dados_coletados['area_geografica'],
                         instrucoes_refinamento=refinamento_final,
                         versao_anterior=st.session_state.narrativa_gerada['cronograma']
                     )
@@ -1418,6 +1949,10 @@ elif st.session_state.etapa_atual == 7:
                     
                     plano_completo = f"""
 # PLANO TÁTICO DE MÍDIAS PAGAS - {st.session_state.dados_coletados['cliente'].upper()}
+
+**Área Geográfica:** {st.session_state.dados_coletados['area_geografica']}
+**Orçamento Total:** R$ {st.session_state.dados_coletados['orcamento']:,.2f}
+**Data de Geração:** {datetime.now().strftime('%d/%m/%Y')}
 
 ---
 
@@ -1453,6 +1988,7 @@ elif st.session_state.etapa_atual == 7:
                         plano_completo,
                         st.session_state.dados_coletados['cliente'],
                         st.session_state.dados_coletados['objetivos'],
+                        st.session_state.dados_coletados['area_geografica'],
                         instrucoes_refinamento=refinamento_final,
                         versao_anterior=st.session_state.narrativa_gerada['recomendacoes']
                     )
@@ -1464,7 +2000,7 @@ elif st.session_state.etapa_atual == 7:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🔄 Novo Planejamento", use_container_width=True):
-            for key in ['etapa_atual', 'dados_coletados', 'narrativa_gerada', 'plano_final', 'metas_okr']:
+            for key in ['etapa_atual', 'dados_coletados', 'narrativa_gerada', 'plano_final', 'metas_okr', 'metas_iniciais']:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
